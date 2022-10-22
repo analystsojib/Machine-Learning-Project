@@ -1,0 +1,13 @@
+* Partner: whether or not the customers has a partner;  
+* tenure: the number of months the customer has stayed with the company;  
+* PhoneService: whether or not the customer has a phone service;  
+* MultipleLines: whether or not the customer has multiple lines;  
+* InternetService: the internet provider of the customer;  
+* OnlineSecurity: whether or not the customer has online security;  
+* OnlineBackup: whether or not the customer has an online backup;  
+* DeviceProtection: whether or not the customer has device protection;  
+* TechSupport: whether or not the customer has tech support;  
+* Contract: the contract term of the customer;  
+* MonthlyCharges: the amount that is charged to the customer on a monthly basis;  
+* TotalCharges: the total amount charged to the customer;  
+* Churn: whether or not the customer has churned.
