@@ -1,0 +1,606 @@
+---
+title: "US Accident Data Analysis"
+author: "Samrat"
+date: '2022-10-09'
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# Introduction
+
+The data set analysed is titled "US Accident Injury Data Set". The data contains information about the accidents in the mines in the USA.
+
+## Objective of the Project
+
+The objective is to predict what circumstances and situations in the mine lead to Days Away From Work Only. So the overall objective of all the classification models is to identify the situation or circumstance where the Days Away From Work are likely. The number of Days Away From Work in the data set is 595 in approximately 2000 accident events. The ratio is 29.75%, which makes the data quite balanced. This was chosen for prediction because the impact of such a finding can reduce the days away from work. This knowledge can be used by the authorities in the mine to take adequate steps to prevent accidents.
+
+## About the Data
+
+**Unique vs Duplicate variables**\
+Total Unique attributes: 39\
+Duplicate (Explanation) attributes: 18\
+**Categorical vs Continuous attributes**\
+Total categorical attributes: 53\
+Total continuous attributes: 4\
+Total attributes: 57\
+Total observations: 2000\
+
+```{r warning=FALSE, message=FALSE}
+# Set working directory
+
+url <- "https://storage.googleapis.com/kagglesdsdata/datasets/269522/560057/audit_data.csv?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=gcp-kaggle-com%40kaggle-161607.iam.gserviceaccount.com%2F20221010%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20221010T042236Z&X-Goog-Expires=259200&X-Goog-SignedHeaders=host&X-Goog-Signature=9d9efc4a7156a8be0120518b6fa8b33c852faf38dd3de07630f99b2583e0e71a87072bb2d958921b4e870c847ac5c9d0b077cb1a9bd961fee79d4489484ea5f3264d6fa4c6eb4aea550d7b341bfdfbe585fc9ac14298762567bf1927738e0801912a6efd91ac3ac207169068d996d6e0ae180e639fcf3a1b4d2a30d97599eebf707918248e1e648b8aa7172fea17ff8bc5c7a4ec0514e1bdb681a7c940d0d01cfcb0b7b269800871da19df8f6f915135d86ba9101bba69bf2abbb3e5085868845cae754f3d23377a47d6d27b6e87ebefeac98d9c178305c31ad021c83234f7e146878aff0fa8b35b8047c717ad7dc6c6777d357f2db7e8bc662a0fce263d7879"
+
+
+Audit_data <- read.csv(url)
+
+
+head(Audit_data)
+
+
+```
+
+## Loading Data and Libraries
+
+```{r warning=FALSE, message=FALSE}
+library(dplyr)
+library(party)
+library(caret) 
+library(MASS) 
+library(e1071)
+library(pROC)
+library(mlbench)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(Metrics)
+library(tidyverse)
+
+```
+
+# Data Preprocessing
+
+### Make a Response Category
+
+```{r warning=FALSE, message=FALSE}
+
+
+Audit_data$Risk <- as.factor(Audit_data$Risk)
+
+str(Audit_data)
+
+library(skimr)
+
+str(Audit_data)
+
+skim(Audit_data) ### to see the summary statistics with distribution
+
+
+```
+
+**At this stage, we first defined our target variable and chose two specific categories for further analysis. Our target variable is DEGREE_INJURY and our two categories are NO DYS AWY FRM WRK,NO RSTR ACT and DAYS AWAY FROM WORK ONLY. For creating a response category,filter the whole data set so that the degree of injury variable contains only two category values: 0 and 1.**
+
+```{r warning=FALSE, message=FALSE}
+table(filter_data$DaysAwayFromWork)
+```
+
+**Our data set contains 1147 observations where the response variable contains 2 categories: "0" (552 observations) and "1" (595 observations).**
+
+### Grouping Categories
+
+For our analysis, we will try to record into the same variable for reducing categories, which has more impact on our model.
+
+```{r warning=FALSE, message=FALSE}
+
+### SUbunit creation
+
+filter_data <- filter_data %>% 
+  mutate(SUBUNIT=recode(SUBUNIT,
+                        "MILL OPERATION/PREPARATION PLANT"="MILL OPERATION",
+                        "STRIP, QUARY, OPEN PIT"="STRIP_QUARY_OPEN PIT",
+                        "UNDERGROUND"="UNDERGROUND",
+                        "SURFACE AT UNDERGROUND"="UNDERGROUND",
+                        "AUGER"="OHERS",
+                        "CULM BANK/REFUSE PILE"="OHERS",
+                        "INDEPENDENT SHOPS OR YARDS"="OHERS",
+                        "OFFICE WORKERS AT MINE SITE"="OHERS",
+                        "DREDGE"="OHERS"))
+
+
+
+table(filter_data$SUBUNIT)
+```
+
+**Here, we tried to reduce the number of categories in "SUBUNIT" by grouping similar categories into one group.**
+
+```{r warning=FALSE, message=FALSE}
+
+
+filter_data <- filter_data %>% 
+  mutate(UG_LOCATION=recode(UG_LOCATION,
+                        "NO VALUE FOUND"="NOT MARKED"))
+
+```
+
+**Here, we tried to reduce the number of categories in "UG_LOCATION" by grouping similar categories into one group.**
+
+```{r warning=FALSE, message=FALSE}
+
+filter_data <- filter_data %>% 
+  mutate(UG_MINING_METHOD=recode(UG_MINING_METHOD,
+                            "Caving"="Continuous Mining",
+                            "Hand"="Continuous Mining",
+                            "NO VALUE FOUND"="Other"))
+```
+
+**Here, we tried to reduce the number "UG_MINING_METHOD" by grouping similar categories into one group.**
+
+```{r warning=FALSE, message=FALSE}
+
+filter_data <- filter_data %>% 
+  mutate(CLASSIFICATION=ifelse(CLASSIFICATION=="FALL OF ROOF OR BACK","FALL OF ROOF",
+                                    ifelse(CLASSIFICATION=="HANDTOOLS (NONPOWERED)","HANDTOOLS",
+                                           ifelse(CLASSIFICATION=="HANDLING OF MATERIALS","HANDLING OF MATERIALS",
+                                                  ifelse(CLASSIFICATION=="MACHINERY","MACHINERY",
+                                                         ifelse(CLASSIFICATION=="SLIP OR FALL OF PERSON","FALL OF PERSON",
+                                                                ifelse(CLASSIFICATION=="POWERED HAULAGE","POWERED HAULAGE",
+                                           "OTHERS")))))))
+
+
+table(filter_data$CLASSIFICATION)
+```
+
+**Here, we tried to reduce the number of categories in "CLASSIFICATION" by grouping similar categories into one group.**
+
+```{r warning=FALSE, message=FALSE}
+
+filter_data <- filter_data %>% 
+  mutate(OCCUPATION=ifelse(OCCUPATION=="Laborer, Blacksmith, Bull gang, Parts runner, Roustabout, Pick-up man, Pitman","L_B_B_P_R_P_P Category",
+                               ifelse(OCCUPATION=="Maintenance man, Mechanic,  Repair/Serviceman, Boilermaker, Fueler, Tire tech, Field service tech","M_M_R_B_F_T_F Category",
+                                      ifelse(OCCUPATION=="Roof bolter, Rock bolter,  Pinner, Mobile roof support operator (MRS)","R_R_P_M Category",
+                                             ifelse(OCCUPATION=="Warehouseman, Bagger, Palletizer/Stacker, Store keeper, Packager, Fabricator, Cleaning plant operator","W_B_P_S_P_F_C Category",
+                                                    "OTHERS")))))
+
+```
+
+**Here, we tried to reduce the number of categories in "OCCUPATION" by grouping similar categories into one group.**
+
+```{r warning=FALSE, message=FALSE}
+
+filter_data <- filter_data %>% 
+  mutate(ACTIVITY=ifelse(ACTIVITY=="GET ON/OFF EQUIPMENT/MACHINES","MACHINES",
+                           ifelse(ACTIVITY=="HAND TOOLS (NOT POWERED)","HAND TOOLS",
+                                  ifelse(ACTIVITY=="HANDLING SUPPLIES/MATERIALS","MATERIALS",
+                                         ifelse(ACTIVITY=="MACHINE MAINTENANCE/REPAIR","REPAIR",
+                                                ifelse(ACTIVITY=="WALKING/RUNNING","RUNNING",
+                                                "OTHERS"))))))
+```
+
+**Here, we tried to reduce the number of categories in "ACTIVITY" by grouping similar categories into one group.**
+
+```{r warning=FALSE, message=FALSE}
+
+
+filter_data <- filter_data %>% 
+  mutate(INJURY_SOURCE=ifelse(INJURY_SOURCE=="GROUND","GROUND",
+                              ifelse(INJURY_SOURCE=="METAL COVERS & GUARDS","METAL COVERS",
+                                     ifelse(INJURY_SOURCE=="METAL,NEC(PIPE,WIRE,NAIL)","Metal_NEC",
+                                            ifelse(INJURY_SOURCE=="CAVING ROCK,COAL,ORE,WSTE","CAVING ROCK",
+                                                   ifelse(INJURY_SOURCE=="MINE FLOOR,BOTTOM,FOOTWAL","MINE_FLOOR_BOTTOM_FOOTWAL",
+                                                          "OTHERS"))))))
+```
+
+**Here, we tried to reduce the number of categories in "INJURY_SOURCE" by grouping similar categories into one group.**
+
+```{r warning=FALSE, message=FALSE}
+
+filter_data <- filter_data %>% 
+  mutate(IMMED_NOTIFY=ifelse(IMMED_NOTIFY=="NO VALUE FOUND","NO VALUE FOUND",
+                             ifelse(IMMED_NOTIFY=="NOT MARKED","NOT MARKED",
+                                    "OTHERS")))
+
+```
+
+**Here, we tried to reduce the number of categories in "IMMED_NOTIFY" by grouping similar categories into one group.**
+
+```{r warning=FALSE, message=FALSE}
+
+filter_data <- filter_data %>% 
+  mutate(NATURE_INJURY=ifelse(NATURE_INJURY=="CUT,LACER,PUNCT-OPN WOUND","CUT_LACER_PUNCT",
+                              ifelse(NATURE_INJURY=="FRACTURE,CHIP","FRACTURE_CHIP",
+                                     ifelse(NATURE_INJURY=="UNCLASSIFIED,NOT DETERMED","UNCLASSIFIED",
+                                            ifelse(NATURE_INJURY=="CONTUSN,BRUISE,INTAC SKIN","CONTUSN_BRUISE",
+                                                   ifelse(NATURE_INJURY=="SPRAIN,STRAIN RUPT DISC","SPRAIN_STRAIN",
+                                                          "OTHERS"))))))
+```
+
+**Here, we tried to reduce the number of categories in "NATURE_INJURY" by grouping similar categories into one group.**
+
+### Transform Variable Type
+
+```{r warning=FALSE, message=FALSE}
+
+vars<- c("SUBUNIT","UG_LOCATION","DaysAwayFromWork","UG_MINING_METHOD","CLASSIFICATION","OCCUPATION","ACTIVITY","INJURY_SOURCE","NATURE_INJURY","IMMED_NOTIFY","COAL_METAL_IND")
+
+filter_data[ ,vars]<- lapply(filter_data[ ,vars], as.factor)
+```
+
+**It is important to change the character variable to a factor for further analysis. We changed the required categorical variable format character to a factor.**
+
+### Select Important Variable
+
+```{r warning=FALSE, message=FALSE}
+filter_data <- filter_data %>% 
+  dplyr::select(SUBUNIT, UG_LOCATION, DaysAwayFromWork, UG_MINING_METHOD, CLASSIFICATION, OCCUPATION, ACTIVITY, INJURY_SOURCE, NATURE_INJURY, IMMED_NOTIFY, COAL_METAL_IND, 
+         NO_INJURIES,TOT_EXPER, MINE_EXPER, JOB_EXPER )
+```
+
+**Here, we just take the important variables, which we will use in our models.**
+
+### Missing Value Handling
+
+I**t is important that there should not be any missing values to enhance model accuracy. First, we will visualize the missing values for each variable.**
+
+```{r warning=FALSE, message=FALSE}
+
+filter_data  %>%
+  summarise_all(list(~is.na(.)))%>%
+  pivot_longer(everything(),
+               names_to = "variables", values_to="missing") %>%
+  count(variables, missing) %>%
+  ggplot(aes(y=variables,x=n,fill=missing))+
+  geom_col()
+
+```
+
+**There are some missing values in a few columns.**
+
+```{r warning=FALSE, message=FALSE}
+
+filter_data <- filter_data %>% 
+  mutate(TOT_EXPER = ifelse(is.na(TOT_EXPER),
+                            median(TOT_EXPER, na.rm = T),
+                            TOT_EXPER)) %>%  
+  mutate(MINE_EXPER = ifelse(is.na(MINE_EXPER),
+                                   median(MINE_EXPER, na.rm = T),
+                             MINE_EXPER))%>%  
+  mutate(JOB_EXPER = ifelse(is.na(JOB_EXPER),
+                                   median(JOB_EXPER, na.rm = T),
+                            JOB_EXPER))
+
+```
+
+**Here,we impute the missing values by the median of each variable.**
+
+```{r warning=FALSE, message=FALSE}
+colSums(is.na(filter_data))
+
+
+filter_data  %>%
+  summarise_all(list(~is.na(.)))%>%
+  pivot_longer(everything(),
+               names_to = "variables", values_to="missing") %>%
+  count(variables, missing) %>%
+  ggplot(aes(y=variables,x=n,fill=missing))+
+  geom_col()
+
+
+```
+
+**The column bar chart above depicts that the median successfully imputes missing values for each. Now our data is fully prepared for the analysis.**
+
+### Multicollinearity Checking
+
+```{r warning=FALSE, message=FALSE}
+cx<-c('NO_INJURIES','TOT_EXPER','MINE_EXPER', 'JOB_EXPER')
+corr_data<- filter_data[,cx]
+round(cor(corr_data), 2)
+
+```
+
+**One way to test for multicollinearity is by creating a correlation matrix.**
+
+**A correlation matrix (or correlogram) visualizes the correlation between multiple continuous variables. Correlations range always between -1 and +1, where -1 represents perfect negative correlation and +1 perfect positive correlation.**
+
+**Correlations close to-1 or +1 might indicate the existence of multicollinearity. As a rule of thumb, one might suspect multicollinearity when the correlation between two (predictor) variables is below -0.75 or above +0.75.**\
+**Since, all the values are lies between -0.75 to 0.75, we can say that there are no multicollinearity problem.**
+
+```{r warning=FALSE, message=FALSE}
+library("corrplot")
+corrplot(cor(corr_data), method = "number")
+```
+
+### Data Partition
+
+```{r warning=FALSE, message=FALSE}
+set.seed(555)
+ind <- sample(2, nrow(filter_data),
+              replace = TRUE,
+              prob = c(0.6, 0.4))
+training <- filter_data[ind==1,]
+testing <- filter_data[ind==2,]
+
+```
+
+**We split the data set into train and test with 60% and 40% for model training and testing.**
+
+# Models
+
+**For analysis purposes, we will use training and testing data to predict what circumstances and situations in the mine lead to Days Away From Work Only. Three well-known ML algorithms such as Logistic Regression (LR), Decision Tree (DT), and Naive Bayes Classier have been considered to accurately predict the category of DaysAwayFromWork. Additionally, a systematic assessment of the algorithms was performed by using accuracy.**
+
+## Logistic Regression Model
+
+Now, we will try to fit a logistic regression model to our training data.
+
+```{r warning=FALSE, message=FALSE,results='hide'}
+#fit logistic regression model 
+model_lr <- glm(DaysAwayFromWork~., family="binomial", data=training) %>% stepAIC(trace = T)
+
+
+```
+
+```{r warning=FALSE}
+summary(model_lr)
+```
+
+**The model's significant variables are "CLASSIFICATIONHANDLING OF MATERIALS", "CLASSIFICATIONHANDTOOLS", "OCCUPATIONM_M\_R_B\_F_T\_F Category", "OCCUPATIONR_R\_P_M Category", "NATURE_INJURYCUT_LACER_PUNCT", "NATURE_INJURYFRACTURE_CHIP", "IMMED_NOTIFYOTHERS", and "COAL_METAL_INDM".These above mentioned variables have a very low P-Value (less than .05).These variables have a significant effect on our dependent variable.**
+
+**The difference between Null deviance and Residual Deviance tells us that the model is a good fit. The greater the difference, the better the model. Null deviance is the value when there is only an intercept in our equation with no variables, and residual deviance is the value when all variables are considered. It makes sense to consider the model good if that difference is big enough.**
+
+```{r}
+sk<-summary(model_lr)
+dh<-sk$coefficients
+odds_ratio <- exp(dh[ ,"Estimate"])
+odds_ratio
+
+```
+
+### Model Prediction
+
+**To check the efficiency of the model, we are now going to run the model on testing data set, after which we will evaluate the accuracy of the model by using a confusion matrix.**
+
+```{r warning=FALSE, message=FALSE}
+# and those who are not
+predict_lr<-predict(model_lr,testing,type = "response" )
+table(training$DaysAwayFromWork)
+```
+
+### Confusion Matrix and Accuracy
+
+```{r warning=FALSE, message=FALSE}
+predict_results <- ifelse(predict_lr > 0.5,1,0)
+cm_lr <- table(testing$DaysAwayFromWork, predict_results)
+confusionMatrix(cm_lr)
+
+
+```
+
+**Based on the testing data set, the prediction of DaysAwayFromWork category 43.99% belongs to the NO DYS AWY FRM WRK category, 56.01% belongs to the NO RSTR ACT and DAYS AWAY FROM WORK ONLY category. Our predicted results also show that the model correctly classified 159+186=345 from 457 observations, and our model accuracy is 75.71% based on testing data.**
+
+```{r warning=FALSE, message=FALSE}
+#### AUC Curve ####
+library(ROCR)
+predict_lr<-predict(model_lr,testing,type = "response" )
+pr <- prediction(predict_lr, testing$DaysAwayFromWork)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+```
+
+**A Receiver Operator Characteristic (ROC) curve is a graphical plot used to show the diagnostic ability of binary classifiers. The ROC curve shows the trade-off between sensitivity (or TPR) and specificity (1 -- FPR). Classifiers that give curves closer to the top-left corner indicate a better performance. So, in our analysis, the above ROC curve indicates a better performance for this model.**
+
+```{r warning=FALSE, message=FALSE}
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+**We can see that the AUC is 0.845, which is quite high. This indicates that our model does a good job of predicting whether or not an individual will be in NO DYS AWY FRM WRK,NO RSTR ACT or DAYS AWAY FROM WORK ONLY.**
+
+## Decision Tree
+
+The decision tree algorithm works based on the decision on the conditions of the features. Nodes are the conditions or tests on an attribute. A branch represents the outcome of the tests, and leaf nodes are the decisions based on the conditions. This time, we will use a decision tree model using the **rpart()** function for prediction of the DaysAwayFromWork category for the cleaning data.
+
+```{r warning=FALSE, message=FALSE}
+
+
+##Build Decision tree model
+
+
+DaysAwayFromWorkModel <- rpart(DaysAwayFromWork~., training, method = "class")
+
+
+```
+
+### Decision Tree Plot
+
+**The decision tree plot visualizes how the full model works under certain conditions and also describes the root nodes and leaf nodes that actually illustrate the final decision.**
+
+```{r}
+
+rpart.plot(DaysAwayFromWorkModel, type = 0, extra = 0)
+
+
+```
+
+### Confusion Matrix and Accuracy
+
+**To check the efficiency of the model, we are now going to run the model on testing data set, after which we will evaluate the accuracy of the model by using a confusion matrix.**
+
+```{r}
+###
+
+predicted_class <- predict(DaysAwayFromWorkModel, testing, type = "class")
+
+confusionMatrix(predicted_class, reference = testing$DaysAwayFromWork)
+
+```
+
+**Based on the testing data set, the prediction of DaysAwayFromWork category 44.88% belongs to the NO DYS AWY FRM WRK category, 56.01% belongs to the NO RSTR ACT and DAYS AWAY FROM WORK ONLY category. Our predicted results also show that the model correctly classified 157+187=344 from 457 observations, and our model accuracy is 75.05% based on testing data.**
+
+## Naive Bayes Classifier
+
+Naive Bayes classifiers are a family of simple probabilistic classifiers based on applying Bayes theorem with **strong(Naive)** independence assumptions between the features or variables.
+
+```{r warning=FALSE, message=FALSE}
+####  
+#Naive Bayes classifier ####
+
+
+
+classifier_cl <- naiveBayes(DaysAwayFromWork ~ ., data =training)
+summary(classifier_cl)
+
+
+
+```
+
+### Confusion Matrix and Accuracy
+
+**To check the efficiency of the model, we are now going to run the model on testing data set, after which we will evaluate the accuracy of the model by using a confusion matrix.**
+
+```{r}
+# Predicting on train data'
+y_pred <- predict(classifier_cl, newdata = testing)
+
+
+# Confusion Matrix
+confusionMatrix(testing$DaysAwayFromWork, y_pred)
+
+```
+
+**Based on the testing data set, the prediction of DaysAwayFromWork category 54.04% belongs to the NO DYS AWY FRM WRK category, 45.95% belongs to the NO RSTR ACT and DAYS AWAY FROM WORK ONLY category. Our predicted results also show that the model correctly classified 172+156=328 from 457 observations, and our model accuracy is 72.43% based on testing data.**
+
+## Clustering
+
+**Clustering is the task of dividing the population or data points into a number of groups such that data points in the same groups are more similar to other data points in the same group than those in other groups. In simple words, the aim is to segregate groups with similar traits and assign them into clusters. The goal of this study is to identify a cluster of injuries that are similar in nature.**
+
+```{r warning=FALSE, message=FALSE}
+vas<-c("INJURY_SOURCE","NATURE_INJURY","TOT_EXPER","MINE_EXPER","JOB_EXPER")
+cldata<- Audit_data[,vas]
+dim(cldata)
+
+```
+
+**So, at first we select variables that will be used for clustering process.**
+
+```{r warning=FALSE, message=FALSE}
+colSums(is.na(cldata))
+
+```
+
+**We checked for missing values.**
+
+```{r warning=FALSE, message=FALSE}
+cldata <- cldata %>%
+  mutate(TOT_EXPER = ifelse(is.na(TOT_EXPER),
+                            median(TOT_EXPER, na.rm = T),
+                            TOT_EXPER)) %>%
+  mutate(MINE_EXPER = ifelse(is.na(MINE_EXPER),
+                             median(MINE_EXPER, na.rm = T),
+                             MINE_EXPER))%>%
+  mutate(JOB_EXPER = ifelse(is.na(JOB_EXPER),
+                            median(JOB_EXPER, na.rm = T),
+                            JOB_EXPER))
+```
+
+**Here, we imputed the missing values by median.**
+
+```{r warning=FALSE, message=FALSE}
+cd<-cldata %>% group_by(NATURE_INJURY) %>% summarize(Avg_EXP = mean(TOT_EXPER),
+                                                     AVG_MINE = mean(MINE_EXPER),
+                                                     AVG_JOb = mean(JOB_EXPER))
+```
+
+**For each type of NATURE_INJURY we avraged the values of TOT_EXPER, MINE_EXPER, JOB_EXPER.**
+
+```{r warning=FALSE, message=FALSE}
+df<-cd
+library(tidyverse)
+df <- df %>% column_to_rownames(., var = 'NATURE_INJURY')
+head(df)
+```
+
+```{r warning=FALSE, message=FALSE}
+df<-scale(df)
+head(df)
+```
+
+**We scaled each variable to have a mean of 0 and sd of 1.**
+
+```{r warning=FALSE, message=FALSE}
+library(factoextra)
+library(cluster)
+clustdf <- agnes(df, method = "ward")
+```
+
+**Here, we use ward method for our hierarchical clustering.**
+
+```{r warning=FALSE, message=FALSE}
+pltree(clustdf, cex = 0.6, hang = -1, main = "Dendrogram")
+```
+
+**Now, we ploted the dendogram to visual the different clusters.**
+
+## Model Comparison
+
++---------------+---------------------+------------------+------------------------+
+| Statistic     | Logistic Regression | Decision Tree    | Naive Bayes Classifier |
++:==============+:===================:+:================:+:======================:+
+| Accuracy      | 75.71\*\*\*         | 75.05            | 72.43                  |
+|               |                     |                  |                        |
+| ( 95% )       | (0.7151, 0.7957)    | (0.7082, 0.7896) | (0.6809, 0.7648)       |
++---------------+---------------------+------------------+------------------------+
+| Sensitivity   | 78.61\*\*\*         | 65.93            | 70.83                  |
++---------------+---------------------+------------------+------------------------+
+| Specificity   | 73.44               | 83.98            | 74.19                  |
++---------------+---------------------+------------------+------------------------+
+| Kappa         | 0.5136\*\*\*        | 0.5001           | 0.4489                 |
++---------------+---------------------+------------------+------------------------+
+
+**Based on various performance parameter the best results have been accomplished by the Logistic Regression (LR) algorithm having demonstrated an accuracy of 75.71%, a sensitivity of 78.61%. Besides, a most extreme discriminative ability additionally appeared by LR classification (Cohen's kappa statistic=0.5136). Along these lines, we can presume that Logistic Regression predict the DAYS AWAY FROM WORK ONLY category superior to any other ML algorithms utilized in this study.**
+
+# Conclusion
+
+**In this study, we compered Three ML algorithms for predicting whether the DaysAwayFromWork category of the US Accident Data. Among the algorithms considered, the Logistic Regression gives better performed with the more classification accuracy for predicting the category DAYS AWAY FROM WORK ONLY variable in US Accident Data.**
+
++-------------------------------------+------------------------------+
+| Significant variables               | Odds ratio                   |
++:===================================:+:============================:+
+| CLASSIFICATIONHANDLING OF MATERIALS | 0.51075976                   |
++-------------------------------------+------------------------------+
+| CLASSIFICATIONHANDTOOLS             | 0.28999746                   |
++-------------------------------------+------------------------------+
+| OCCUPATIONM_M\_R_B\_F_T\_F Category | 0.34758954                   |
++-------------------------------------+------------------------------+
+| OCCUPATIONR_R\_P_M Category         | 0.30275139                   |
++-------------------------------------+------------------------------+
+| NATURE_INJURYCUT_LACER_PUNCT        | 0.07486389                   |
++-------------------------------------+------------------------------+
+| NATURE_INJURYFRACTURE_CHIP          | 0.42434872                   |
++-------------------------------------+------------------------------+
+| IMMED_NOTIFYOTHERS                  | 2.74291816                   |
++-------------------------------------+------------------------------+
+| COAL_METAL_INDM                     | 0.21494628                   |
++-------------------------------------+------------------------------+
+
+-   **For CLASSIFICATION identifying as HANDLING OF MATERIALS, the probability of DAYS AWAY FROM WORK ONLY is decreased by 1-0.51 = 0.49x100% = 49% from those identifying as FALL OF PERSON.**
+
+-   **For CLASSIFICATION identifying as HANDTOOLS, the probability of DAYS AWAY FROM WORK ONLY is decreased by 1-0.29 = 0.71x100% = 71% from those identifying as FALL OF PERSON.**
+
+-   **For OCCUPATION identifying as M_M\_R_B\_F_T\_F Category, the probability of DAYS AWAY FROM WORK ONLY is decreased by 1-0.35 = 0.65x100% = 65% from those identifying as L_B\_B_P\_R_P\_P Category.**
+
+-   **For OCCUPATION identifying as R_R\_P_M Category, the probability of DAYS AWAY FROM WORK ONLY is decreased by 1-0.31 = 0.69x100% = 69% from those identifying as L_B\_B_P\_R_P\_P Category.**
+
+-   **For NATURE_INJURY identified as CUT_LACER_PUNCT, the probability of DAYS AWAY FROM WORK ONLY is decreased by 1 - 0.07 = 0.93x100% = 93% from those identified as CONTUSN_BRUISE.**
+
+-   **For NATURE_INJURY identifying as FRACTURE_CHIP, the probability of DAYS AWAY FROM WORK ONLY is decreased by 1 - 0.41 = 0.59x100% = 59% from those identifying as CONTUSN_BRUISE.**
+
+-   **For IMMED_NOTIFY identifying as OTHERS, the probability of DAYS AWAY FROM WORK ONLY is increased by 2.74 - 1 = 1.74x100% = 174% from those identifying as NO VALUE FOUND.**
+
+-   **For COAL_METAL_IND identifying as M, the probability of DAYS AWAY FROM WORK ONLY is decreased by 1-0.21 = 0.79x100% = 79% from those identifying as C.**
